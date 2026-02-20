@@ -30,7 +30,6 @@ def GetDataFromQueryParams():
 def SetupPage():
     st.title("Nastavení nové hry")
     # reset st session state
-    #st.session_state.clear()
 
     edited_data = st.data_editor(
         EMPTY_DATA,
