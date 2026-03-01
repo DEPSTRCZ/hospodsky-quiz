@@ -17,10 +17,6 @@ def GetDataFromQueryParams():
     if "data" in st.query_params:
         decoded = base64.b64decode(st.query_params["data"]).decode()
         loaded = pd.read_json(StringIO(decoded), orient="index")
-        #if "Žolík" in loaded.columns:
-        #    loaded["Žolík"] = loaded["Žolík"].astype("boolean").fillna(False)
-        #else:
-        #    loaded["Žolík"] = False
         return loaded
     else:
         return EMPTY_DATA
@@ -29,7 +25,6 @@ def GetDataFromQueryParams():
 
 def SetupPage():
     st.title("Nastavení nové hry")
-    # reset st session state
 
     edited_data = st.data_editor(
         EMPTY_DATA,
@@ -50,12 +45,9 @@ def SetupPage():
         }
     )
     
-    # Fill NaN values with 0
     edited_data = edited_data.fillna(0)
 
-    
     if st.button("Začít hru"):
-        # check if the data equals empty if so do not allow saving and show an error message
         if edited_data.equals(EMPTY_DATA):
             st.error("Nelze uložit prázdná data. Přidejte alespoň jeden tým.")
         else:
@@ -69,14 +61,20 @@ def RoundPage(round_number):
     new_data = GetDataFromQueryParams()
 
     if "Žolík" not in new_data.columns:
-        new_data["Žolík"] = None
+        new_data["Žolík"] = -1
         SaveToQueryParams(new_data)
         st.rerun()
-    # If there is not a column for the current round, add it
+
     if f"Kolo {round_number}" not in new_data.columns:
-        new_data[f"Kolo {round_number}"] = 0
+        new_data[f"Kolo {round_number}"] = 0.0
         SaveToQueryParams(new_data)
         st.rerun()
+
+    # Cast all existing round columns to float to ensure Streamlit accepts decimals
+    for i in range(1, round_number + 1):
+        col = f"Kolo {i}"
+        if col in new_data.columns:
+            new_data[col] = new_data[col].astype(float)
 
     def FormatujŽolíkaxD(option):
         return f"🃏 V kole {option}"
@@ -84,8 +82,7 @@ def RoundPage(round_number):
     sort = st.toggle("Seřadit podle celkového skóre", key="sort_toggle")
 
     if sort:
-        new_data = new_data.sort_values("Celkem", ascending=False)  # ← add this
-
+        new_data = new_data.sort_values("Celkem", ascending=False)
 
     round_data_editor = st.data_editor(
         new_data, 
@@ -100,34 +97,62 @@ def RoundPage(round_number):
             ),
             "Celkem": st.column_config.NumberColumn(
                 disabled=True,
-                width="small"
+                width="small",
+                format="%.2f"
             ),
             0: st.column_config.TextColumn(
                 label="Název týmu",
                 width=None
-            )
+            ),
+            **{f"Kolo {i}": st.column_config.NumberColumn(
+                width="small",
+                step=0.01,
+                format="%.2f"
+            ) for i in range(1, round_number + 1)}
         }
     )
 
-    # COunt the sum of all rounds for each team and update the "Celkem" column
-    round_columns = [col for col in round_data_editor.columns if col.startswith("Kolo") and col not in ["Celkem", "Žolík",]]
-    round_data_editor["Celkem"] = round_data_editor[round_columns].sum(axis=1)
+    round_columns = [col for col in round_data_editor.columns if col.startswith("Kolo") and col not in ["Celkem", "Žolík"]]
     
-    # Save the edited data
+    # Normalize dtypes before comparing to avoid false positive loop
+    for col in round_columns:
+        round_data_editor[col] = round_data_editor[col].astype(float)
+
+    round_data_editor["Celkem"] = round_data_editor[round_columns].sum(axis=1).round(2)
+    
+    new_data["Celkem"] = new_data["Celkem"].astype(float)
+    new_data["Žolík"] = new_data["Žolík"].astype("int64")
+
+    print("=== DTYPE COMPARISON ===")
+    print("new_data dtypes:\n", new_data.dtypes)
+    print("round_data_editor dtypes:\n", round_data_editor.dtypes)
+
+    print("=== VALUE COMPARISON ===")
+    for col in new_data.columns:
+        for idx in new_data.index:
+            v1 = new_data.at[idx, col]
+            v2 = round_data_editor.at[idx, col]
+            if v1 != v2 or type(v1) != type(v2):
+                print(f"DIFF at [{idx}][{col}]: new_data={v1!r} ({type(v1).__name__}) vs editor={v2!r} ({type(v2).__name__})")
+
+    print("=== INDEX COMPARISON ===")
+    print("new_data index:", new_data.index.tolist(), "name:", new_data.index.name)
+    print("editor index:", round_data_editor.index.tolist(), "name:", round_data_editor.index.name)
+
+
     if not round_data_editor.equals(new_data):
         print("Data changed, saving to query params")
         SaveToQueryParams(round_data_editor)
         st.session_state.editor_version = st.session_state.get("editor_version", 0) + 1
         st.rerun()
 
-
     col1, col2 = st.columns(2)
     with col2:
-        if st.button("Přejít na další kolo",type="secondary"):
+        if st.button("Přejít na další kolo", type="secondary"):
             st.query_params["round"] = str(round_number + 1)
             st.rerun()
     with col1:
-        if st.button("Ukončit a zobrazit výsledky",type="primary"):
+        if st.button("Ukončit a zobrazit výsledky", type="primary"):
             st.query_params.pop("round", None)
             st.query_params["state"] = "finished"
             st.rerun()
@@ -137,7 +162,6 @@ def ResultsPage():
     st.title("Konec hry 🏆")
 
     data = GetDataFromQueryParams().sort_values("Celkem", ascending=True)
-    # iloc[0] = lowest score (last place), iloc[-1] = highest score (1st place)
 
     if "revealed_count" not in st.session_state:
         st.session_state.revealed_count = 0
@@ -146,17 +170,15 @@ def ResultsPage():
     revealed = st.session_state.revealed_count
 
     if revealed > 0:
-        # Take first `revealed` rows (worst teams first), reverse so newest is on top
         result_df = data.head(revealed).iloc[::-1].copy()
         result_df.insert(0, "Místo", range(1, revealed + 1))
 
-        # Format Žolík column if it exists
         if "Žolík" in result_df.columns:
             result_df["Žolík"] = result_df["Žolík"].apply(
-                lambda x: f"🃏 V kole {int(x)}" if pd.notna(x) else ""
+                lambda x: f"🃏 V kole {int(x)}" if pd.notna(x) and x != -1 else "Nevyžolíkováno"
             )
 
-        st.table(result_df,border="horizontal")
+        st.table(result_df, border="horizontal")
     else:
         st.info("Stiskněte tlačítko pro odhalení výsledků.")
 
