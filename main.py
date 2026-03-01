@@ -171,7 +171,7 @@ def ResultsPage():
 
     if revealed > 0:
         result_df = data.head(revealed).iloc[::-1].copy()
-        result_df.insert(0, "Místo", range(revealed, 0, -1))
+        result_df.insert(0, "Místo", range(total_teams, total_teams - revealed, -1))
 
         if "Žolík" in result_df.columns:
             result_df["Žolík"] = result_df["Žolík"].apply(
