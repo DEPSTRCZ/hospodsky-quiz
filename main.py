@@ -55,10 +55,13 @@ def SetupPage():
 
     
     if st.button("Začít hru"):
-        SaveToQueryParams(edited_data)
-        st.query_params["round"] = "1"
-        st.rerun()
-
+        # check if the data equals empty if so do not allow saving and show an error message
+        if edited_data.equals(EMPTY_DATA):
+            st.error("Nelze uložit prázdná data. Přidejte alespoň jeden tým.")
+        else:
+            SaveToQueryParams(edited_data)
+            st.query_params["round"] = "1"
+            st.rerun()
 
 def RoundPage(round_number):
     st.title(f"Kolo {round_number}")
@@ -192,3 +195,6 @@ elif "round" in st.query_params:
 if st.query_params.get("state", [None]) == "finished":
     ResultsPage()
     print("State is finished, showing results page")
+
+
+st.caption("Vytvořil Jiří Edelmann s mentální podporou Vojtěcha Hotaře. Legendy z pokoje 321 :P")
