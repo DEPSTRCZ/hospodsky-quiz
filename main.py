@@ -172,6 +172,11 @@ def ResultsPage():
     if revealed > 0:
         result_df = data.head(revealed).iloc[::-1].copy()
         result_df = result_df.round(2)
+        for col in result_df.select_dtypes(include='number').columns:
+            # if column is "žolík", skip formatting
+            if col == "Žolík":
+                continue
+            result_df[col] = result_df[col].apply(lambda x: f"{x:.2f}")
         #result_df.insert(0, "Místo", range(total_teams, total_teams - revealed, -1))
 
         if "Žolík" in result_df.columns:
